@@ -4,7 +4,6 @@ import numpy as np
 import pickle
 import os
 from rdkit import Chem
-from rdkit.Chem import Draw
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -54,25 +53,18 @@ aryl_smiles = st.sidebar.text_input("Aryl Halide SMILES", value=example_aryl)
 amine_smiles = st.sidebar.text_input("Nucleophile (Amine) SMILES", value=example_amine)
 predict_button = st.sidebar.button("🔮 Predict", use_container_width=True)
 
+# Display structures using PubChem
 col1, col2 = st.columns(2)
 
 with col1:
     if aryl_smiles.strip() and validate_smiles(aryl_smiles):
-        try:
-            mol = Chem.MolFromSmiles(aryl_smiles)
-            img = Draw.MolToImage(mol, size=(300, 300))
-            st.image(img, caption="Aryl Halide")
-        except:
-            st.warning("Cannot draw")
+        st.subheader("Aryl Halide")
+        st.image(f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{aryl_smiles}/PNG", width=300)
 
 with col2:
     if amine_smiles.strip() and validate_smiles(amine_smiles):
-        try:
-            mol = Chem.MolFromSmiles(amine_smiles)
-            img = Draw.MolToImage(mol, size=(300, 300))
-            st.image(img, caption="Nucleophile")
-        except:
-            st.warning("Cannot draw")
+        st.subheader("Nucleophile")
+        st.image(f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{amine_smiles}/PNG", width=300)
 
 if predict_button:
     if not validate_smiles(aryl_smiles) or not validate_smiles(amine_smiles):
