@@ -18,9 +18,18 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stMetric"] {
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 5px;
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-left: 4px solid #1f77b4;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #333333;
+    }
+    [data-testid="stMetricValue"] {
+        color: #1f77b4;
+        font-size: 28px;
     }
     .main {
         padding-top: 2rem;
@@ -53,14 +62,16 @@ def validate_smiles(smiles):
     return mol is not None and mol.GetNumAtoms() > 0
 
 def generate_pdf_report(results_df, aryl_smiles, amine_smiles, top_n=10):
-    """Generate PDF report"""
+    """Generate PDF report with molecular structures"""
     try:
         from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
         from reportlab.lib import colors
         import io
+        import requests
+        from PIL import Image as PILImage
         
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -84,6 +95,54 @@ def generate_pdf_report(results_df, aryl_smiles, amine_smiles, top_n=10):
         story.append(Paragraph(f"Nucleophile SMILES: <font color='blue'>{amine_smiles}</font>", styles['Normal']))
         story.append(Spacer(1, 0.2*inch))
         
+        # Add molecular structures
+        story.append(Paragraph("<b>Molecular Structures:</b>", styles['Heading2']))
+        
+        struct_table_data = []
+        
+        # Get images from PubChem
+        try:
+            aryl_img = requests.get(f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{aryl_smiles}/PNG", timeout=5)
+            if aryl_img.status_code == 200:
+                aryl_pil = PILImage.open(io.BytesIO(aryl_img.content))
+                aryl_buf = io.BytesIO()
+                aryl_pil.save(aryl_buf, format="PNG")
+                aryl_buf.seek(0)
+                aryl_img_obj = Image(aryl_buf, width=1.5*inch, height=1.5*inch)
+            else:
+                aryl_img_obj = Paragraph("Aryl Halide Structure", styles['Normal'])
+        except:
+            aryl_img_obj = Paragraph("Aryl Halide Structure", styles['Normal'])
+        
+        try:
+            amine_img = requests.get(f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{amine_smiles}/PNG", timeout=5)
+            if amine_img.status_code == 200:
+                amine_pil = PILImage.open(io.BytesIO(amine_img.content))
+                amine_buf = io.BytesIO()
+                amine_pil.save(amine_buf, format="PNG")
+                amine_buf.seek(0)
+                amine_img_obj = Image(amine_buf, width=1.5*inch, height=1.5*inch)
+            else:
+                amine_img_obj = Paragraph("Nucleophile Structure", styles['Normal'])
+        except:
+            amine_img_obj = Paragraph("Nucleophile Structure", styles['Normal'])
+        
+        struct_table_data = [
+            [Paragraph("<b>Aryl Halide</b>", styles['Normal']), Paragraph("<b>Nucleophile</b>", styles['Normal'])],
+            [aryl_img_obj, amine_img_obj]
+        ]
+        
+        struct_table = Table(struct_table_data, colWidths=[2.5*inch, 2.5*inch])
+        struct_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e6f2ff')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        story.append(struct_table)
+        story.append(Spacer(1, 0.3*inch))
+        
         # Results table
         story.append(Paragraph("<b>Top 10 Recommended Conditions:</b>", styles['Heading2']))
         story.append(Spacer(1, 0.1*inch))
@@ -98,7 +157,7 @@ def generate_pdf_report(results_df, aryl_smiles, amine_smiles, top_n=10):
                 str(int(row['Rank'])),
                 row['Base'],
                 row['Ligand'],
-                row['Additive'][:30],  # Truncate long names
+                row['Additive'][:30],
                 row['Yield %']
             ])
         
@@ -124,6 +183,9 @@ def generate_pdf_report(results_df, aryl_smiles, amine_smiles, top_n=10):
         return buffer
     except ImportError:
         st.warning("ReportLab not available. Install with: pip install reportlab")
+        return None
+    except Exception as e:
+        st.warning(f"PDF generation error: {str(e)[:100]}")
         return None
 
 st.title("🧪 Buchwald-Hartwig C-N Coupling Optimizer")
