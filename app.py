@@ -16,10 +16,14 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    data_dir = r"C:\Users\slast\PYTHON\0_projekty do portfolio\06_reaction_opt\data"
-    models_dir = os.path.join(data_dir, 'trained_models')
+    # Use relative path - works locally and on Streamlit Cloud
+    model_path = os.path.join("data", "trained_models", "best_model.pkl")
     
-    with open(os.path.join(models_dir, 'best_model.pkl'), 'rb') as f:
+    if not os.path.exists(model_path):
+        st.error(f"Model not found at {model_path}")
+        st.stop()
+    
+    with open(model_path, 'rb') as f:
         model = pickle.load(f)
     
     return model
