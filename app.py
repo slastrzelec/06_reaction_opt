@@ -376,3 +376,24 @@ else:
 
 st.markdown("---")
 st.markdown("<p style='text-align: center'><small>🧬 Buchwald-Hartwig Optimizer v2.0 | Research Tool</small></p>", unsafe_allow_html=True)
+
+# Disclaimer at bottom
+st.warning("""
+### 🚀 Development Version Notice
+
+This is an **early prototype** actively being improved. 
+
+**Current Status:**
+- ✅ Core functionality: Fully working
+- 🔄 **Model Optimization**: Improving accuracy (current R² = 0.30 → targeting 0.65+)
+- 🎨 **UI/UX Enhancement**: Continuous design improvements
+- 📊 **Feature Expansion**: Adding advanced analytics and visualizations
+
+**Roadmap:**
+- Advanced molecular fingerprinting
+- Reaction mechanism insights
+- Real-time model performance metrics
+- Integration with experimental databases
+
+*This tool is for research and educational purposes. Always validate predictions experimentally.*
+""")
