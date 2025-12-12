@@ -155,8 +155,6 @@ if predict_button:
                 use_container_width=True,
                 hide_index=True
             )
-            
-            st.info("⚠️ Preliminary model (R²=0.30). Validate experimentally.")
 
 st.markdown("---")
 st.markdown("<p style='text-align: center'>🧬 Buchwald-Hartwig Optimizer v1.0</p>", unsafe_allow_html=True)
