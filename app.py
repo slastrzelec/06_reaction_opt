@@ -10,12 +10,30 @@ warnings.filterwarnings('ignore')
 st.set_page_config(
     page_title="Buchwald-Hartwig Optimizer",
     page_icon="🧪",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Custom CSS styling
+st.markdown("""
+<style>
+    [data-testid="stMetric"] {
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 5px;
+    }
+    .main {
+        padding-top: 2rem;
+    }
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def load_model():
-    # Use relative path - works locally and on Streamlit Cloud
     model_path = os.path.join("data", "trained_models", "best_model.pkl")
     
     if not os.path.exists(model_path):
@@ -34,8 +52,83 @@ def validate_smiles(smiles):
     mol = Chem.MolFromSmiles(smiles.strip())
     return mol is not None and mol.GetNumAtoms() > 0
 
+def generate_pdf_report(results_df, aryl_smiles, amine_smiles, top_n=10):
+    """Generate PDF report"""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib import colors
+        import io
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Title
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1f77b4'),
+            spaceAfter=30
+        )
+        story.append(Paragraph("Buchwald-Hartwig C-N Coupling Optimizer", title_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Input info
+        story.append(Paragraph("<b>Input Substrates:</b>", styles['Heading2']))
+        story.append(Paragraph(f"Aryl Halide SMILES: <font color='blue'>{aryl_smiles}</font>", styles['Normal']))
+        story.append(Paragraph(f"Nucleophile SMILES: <font color='blue'>{amine_smiles}</font>", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Results table
+        story.append(Paragraph("<b>Top 10 Recommended Conditions:</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        top_results = results_df.head(top_n).reset_index(drop=True)
+        top_results['Rank'] = range(1, len(top_results) + 1)
+        top_results['Yield %'] = top_results['Predicted Yield'].apply(lambda x: f"{x:.1f}%")
+        
+        table_data = [['Rank', 'Base', 'Ligand', 'Additive', 'Yield %']]
+        for _, row in top_results.iterrows():
+            table_data.append([
+                str(int(row['Rank'])),
+                row['Base'],
+                row['Ligand'],
+                row['Additive'][:30],  # Truncate long names
+                row['Yield %']
+            ])
+        
+        table = Table(table_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Footer
+        story.append(Paragraph("<i>⚠️ This is a preliminary model for research purposes only. Always validate results experimentally.</i>", styles['Normal']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+    except ImportError:
+        st.warning("ReportLab not available. Install with: pip install reportlab")
+        return None
+
 st.title("🧪 Buchwald-Hartwig C-N Coupling Optimizer")
-st.markdown("Optimize reaction conditions for C-N cross-coupling.")
+st.markdown("**Optimize reaction conditions for C-N cross-coupling.**")
+st.markdown("---")
 
 try:
     model = load_model()
@@ -43,6 +136,10 @@ try:
 except Exception as e:
     st.error(f"Error loading model: {e}")
     st.stop()
+
+# Initialize session state for history
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
 st.sidebar.header("📝 Input Substrates")
 
@@ -81,7 +178,6 @@ if predict_button:
             for base in bases:
                 for ligand in ligands:
                     for additive in additives:
-                        # Build feature vector - ONLY categorical features
                         features = {}
                         
                         for b in bases:
@@ -90,7 +186,6 @@ if predict_button:
                         for l in ligands:
                             features[f'ligand_{l}'] = 1 if l == ligand else 0
                         
-                        # All possible additives from model
                         all_additives = [
                             '3,5-dimethylisoxazole', '3-methyl-5-phenylisoxazole',
                             '3-methylisoxazole', '3-phenylisoxazole', '4-phenylisoxazole',
@@ -113,16 +208,10 @@ if predict_button:
                         for add in all_additives:
                             features[f'additive_{add}'] = 1 if add == additive else 0
                         
-                        # Create DataFrame with proper order
                         X_pred = pd.DataFrame([features])
-                        
-                        # Get feature names from model
                         feature_names = model.feature_names_in_
-                        
-                        # Reorder to match model
                         X_pred = X_pred[feature_names]
                         
-                        # Predict
                         try:
                             yield_pred = model.predict(X_pred)[0]
                             yield_pred = np.clip(yield_pred, 0, 100)
@@ -139,8 +228,18 @@ if predict_button:
             
             results_df = pd.DataFrame(results).sort_values('Predicted Yield', ascending=False)
             
+            # Add to history
+            st.session_state.history.append({
+                'Aryl SMILES': aryl_smiles,
+                'Amine SMILES': amine_smiles,
+                'Top Result': results_df.iloc[0]['Base'],
+                'Yield': f"{results_df.iloc[0]['Predicted Yield']:.1f}%",
+                'Timestamp': pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+            })
+            
             st.markdown("---")
             st.subheader("🎯 Top 10 Recommendations")
+            st.markdown("**Predicted reaction yields sorted by performance:**")
             
             top_10 = results_df.head(10).reset_index(drop=True)
             top_10['Rank'] = range(1, 11)
@@ -151,6 +250,67 @@ if predict_button:
                 use_container_width=True,
                 hide_index=True
             )
+            
+            # Detailed information
+            with st.expander("📊 Detailed Statistics"):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Best Yield", f"{results_df['Predicted Yield'].max():.1f}%")
+                with col2:
+                    st.metric("Average Yield", f"{results_df['Predicted Yield'].mean():.1f}%")
+                with col3:
+                    st.metric("Total Combinations", len(results_df))
+                with col4:
+                    st.metric("Std Dev", f"{results_df['Predicted Yield'].std():.1f}%")
+                
+                # Base performance
+                st.markdown("**Base Performance:**")
+                base_stats = results_df.groupby('Base')['Predicted Yield'].agg(['mean', 'max', 'min'])
+                st.dataframe(base_stats.round(1), use_container_width=True)
+                
+                # Ligand performance
+                st.markdown("**Ligand Performance:**")
+                ligand_stats = results_df.groupby('Ligand')['Predicted Yield'].agg(['mean', 'max', 'min'])
+                st.dataframe(ligand_stats.round(1), use_container_width=True)
+            
+            # Export options
+            st.markdown("---")
+            st.subheader("💾 Export Results")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                csv = top_10.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"buchwald_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            
+            with col2:
+                pdf_buffer = generate_pdf_report(results_df, aryl_smiles, amine_smiles)
+                if pdf_buffer:
+                    st.download_button(
+                        label="📄 Download PDF",
+                        data=pdf_buffer,
+                        file_name=f"buchwald_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf"
+                    )
+
+# History sidebar
+st.sidebar.markdown("---")
+st.sidebar.header("📜 History")
+
+if st.session_state.history:
+    history_df = pd.DataFrame(st.session_state.history)
+    st.sidebar.dataframe(history_df, use_container_width=True, hide_index=True)
+    
+    if st.sidebar.button("🗑️ Clear History"):
+        st.session_state.history = []
+        st.rerun()
+else:
+    st.sidebar.info("No predictions yet")
 
 st.markdown("---")
-st.markdown("<p style='text-align: center'>🧬 Buchwald-Hartwig Optimizer v1.0</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center'><small>🧬 Buchwald-Hartwig Optimizer v2.0 | Research Tool</small></p>", unsafe_allow_html=True)
